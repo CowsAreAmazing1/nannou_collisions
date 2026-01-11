@@ -8,3 +8,6 @@ edition = "2021"
 [dependencies]
 nannou = "0.19"
 rayon = "1.11.0"
+
+[profile.release]
+debug = true

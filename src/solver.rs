@@ -6,7 +6,6 @@ use nannou::prelude::*;
 use nannou::color::Hsv;
 
 
-#[derive(Clone, Copy)]
 pub struct Ball {
     pub position: Vec2,
     last_position: Vec2,
@@ -16,12 +15,23 @@ pub struct Ball {
 }
 
 impl Ball {
-    pub fn new(pos: Vec2, radius: f32, hue: f32) -> Self {
-        let acc = Vec2::ZERO;
+    pub fn new(pos: Vec2, speed: Vec2, radius: f32, hue: f32) -> Self {
         Ball {
             position: pos,
-            last_position: pos,
-            acceleration: acc,
+            last_position: pos - speed,
+            acceleration: Vec2::ZERO,
+            radius,
+            hue,
+        }
+    }
+
+    // Construct a ball from a velocity vector and the integration timestep.
+    // Ensures initial motion is consistent regardless of sub-stepping.
+    pub fn with_velocity(pos: Vec2, velocity: Vec2, radius: f32, hue: f32, dt: f32) -> Self {
+        Ball {
+            position: pos,
+            last_position: pos - velocity * dt,
+            acceleration: Vec2::ZERO,
             radius,
             hue,
         }
@@ -45,7 +55,7 @@ impl Ball {
         self.position      = new_position;
         self.acceleration  = Vec2::ZERO;
 
-        self.hue = (self.hue + 0.05) % 360.0;
+        // self.hue = (self.hue + 0.05) % 360.0;
     }
 
     // fn stop(&mut self) {
@@ -79,6 +89,7 @@ impl Ball {
     // }
 }
 
+#[inline]
 fn circle_intersects_rect(center: Vec2, radius: f32, rect: &Rect) -> bool {
     let closest_x = center.x.clamp(rect.left(), rect.right());
     let closest_y = center.y.clamp(rect.bottom(), rect.top());
@@ -90,7 +101,7 @@ fn circle_intersects_rect(center: Vec2, radius: f32, rect: &Rect) -> bool {
 pub struct QuadTreeNode {
     pub bounds: Rect,
     objects: Vec<(usize, Vec2, f32)>, // (index, position, radius)
-    pub children: Option<[Box<QuadTreeNode>; 4]>,
+    pub children: Option<[Box<QuadTreeNode>; 2]>,
     depth: usize,
 }
 
@@ -109,20 +120,41 @@ impl QuadTreeNode {
         let max = self.bounds.top_right();
         let mid = (min + max) / 2.0;
 
-        // Order: [nw, ne, sw, se]
-        let nw = Rect::from_corners(pt2(min.x, mid.y), pt2(mid.x, max.y));
-        let ne = Rect::from_corners(pt2(mid.x, mid.y), pt2(max.x, max.y));
-        let sw = Rect::from_corners(min, mid);
-        let se = Rect::from_corners(pt2(mid.x, min.y), pt2(max.x, mid.y));
+        // // Order: [nw, ne, sw, se]
+        // let nw = Rect::from_corners(pt2(min.x, mid.y), pt2(mid.x, max.y));
+        // let ne = Rect::from_corners(pt2(mid.x, mid.y), pt2(max.x, max.y));
+        // let sw = Rect::from_corners(min, mid);
+        // let se = Rect::from_corners(pt2(mid.x, min.y), pt2(max.x, mid.y));
 
-        self.children = Some([
-            Box::new(QuadTreeNode::new(nw, self.depth + 1)),
-            Box::new(QuadTreeNode::new(ne, self.depth + 1)),
-            Box::new(QuadTreeNode::new(sw, self.depth + 1)),
-            Box::new(QuadTreeNode::new(se, self.depth + 1)),
-        ]);
+        // self.children = Some([
+        //     Box::new(QuadTreeNode::new(nw, self.depth + 1)),
+        //     Box::new(QuadTreeNode::new(ne, self.depth + 1)),
+        //     Box::new(QuadTreeNode::new(sw, self.depth + 1)),
+        //     Box::new(QuadTreeNode::new(se, self.depth + 1)),
+        // ]);
+        
+        // Order: [left, right]
+        // if self.depth.is_power_of_two() {
+        if max.x - min.x > max.y - min.y {
+            let left  = Rect::from_corners(min, pt2(mid.x, max.y));
+            let right = Rect::from_corners(pt2(mid.x, min.y), max);
+    
+            self.children = Some([
+                Box::new(QuadTreeNode::new(left, self.depth + 1)),
+                Box::new(QuadTreeNode::new(right, self.depth + 1)),
+            ]);
+        } else {
+            let bot = Rect::from_corners(min, pt2(max.x, mid.y));
+            let top = Rect::from_corners(pt2(min.x, mid.y), max);
+    
+            self.children = Some([
+                Box::new(QuadTreeNode::new(top, self.depth + 1)),
+                Box::new(QuadTreeNode::new(bot, self.depth + 1)),
+            ]);
+        }
     }
 
+    #[inline]
     fn insert(&mut self, index: usize, pos: Vec2, radius: f32) {
         if !circle_intersects_rect(pos, radius, &self.bounds) {
             return;
@@ -156,7 +188,7 @@ impl QuadTreeNode {
             for child in children.iter_mut() {
                 child.clear();
             }
-            // Check if all children are empty and can be merged
+
             let can_merge = children.iter().all(|c| c.objects.is_empty() && c.children.is_none());
             if can_merge {
                 self.children = None;
@@ -179,9 +211,7 @@ impl QuadTreeNode {
         }
 
         if let Some(children) = &self.children {
-            for child in children.iter() {
-                child.collect_pairs(pairs);
-            }
+            children.iter().for_each(|child| child.collect_pairs(pairs));
         }
     }
 }
@@ -207,10 +237,9 @@ impl QuadTree {
         self.root.insert(index, pos, radius);
     }
 
-    fn collect_pairs(&self) -> Vec<(usize, usize)> {
-        let mut pairs = Vec::new();
-        self.root.collect_pairs(&mut pairs);
-        pairs
+    fn collect_pairs(&self, pairs: &mut Vec<(usize, usize)>) {
+        pairs.clear();
+        self.root.collect_pairs(pairs);
     }
 
     pub fn average_objects_per_node(&self) -> f32 {
@@ -245,8 +274,8 @@ impl QuadTree {
 }
 
 
-pub const QT_MAX_DEPTH: usize = 5;
-pub const QT_MAX_OBJECTS: usize = 25;
+pub const QT_MAX_DEPTH: usize = 15;
+pub const QT_MAX_OBJECTS: usize = 1;
 
 
 
@@ -256,17 +285,18 @@ pub struct PhysicsSolver {
     pub quadtree: QuadTree,
     pub world: Rect,
     pub gravity: Vec2,
-
     pub sub_steps: u32,
+    pairs: Vec<(usize, usize)>,
 }
 
 impl PhysicsSolver {
     pub fn new(app: &App, gravity_mag: f32, sub_steps: u32) -> Self {
-        let objects: Vec<Ball> = Vec::new();
+        let objects: Vec<Ball> = Vec::with_capacity(1000);
         let (w, h) = app.window_rect().w_h();
         let world = Rect::from_corners(pt2(0.0, 0.0), pt2(w, h));
 
         let quadtree = QuadTree::new(world);
+        let pairs = Vec::with_capacity(QT_MAX_DEPTH * QT_MAX_OBJECTS * QT_MAX_OBJECTS);
     
         PhysicsSolver {
             objects,
@@ -274,6 +304,7 @@ impl PhysicsSolver {
             world,
             gravity: vec2(0.0, gravity_mag),
             sub_steps,
+            pairs,
         }
     }
     
@@ -291,18 +322,19 @@ impl PhysicsSolver {
             self.quadtree.insert(i, obj.position, obj.radius);
         }
 
+        self.quadtree.collect_pairs(&mut self.pairs);
         self.solve_collsions();
         self.update_other(&dt, window_vel);
     }
 
     fn solve_collsions(&mut self) {
-        let pairs = self.quadtree.collect_pairs();
-
-        for (a, b) in pairs {
+        for i in 0..self.pairs.len() {
+            let (a, b) = self.pairs[i];
             self.solve_contact(a, b);
         }
     }
 
+    #[inline(always)]
     fn solve_contact(&mut self, b1_ind: usize, b2_ind: usize) { // Single ball on ball collision
         if b1_ind == b2_ind {
             return;
@@ -310,12 +342,16 @@ impl PhysicsSolver {
         
         let response_coef = 1.0;
         let eps = 0.0001;
+        let eps_sq = eps * eps;
         
         let o2_o1 = self.objects[b1_ind].position - self.objects[b2_ind].position;
-        let dist = self.objects[b1_ind].position.distance(self.objects[b2_ind].position);
+        let dist_sq = self.objects[b1_ind].position.distance_squared(self.objects[b2_ind].position);
+        let min_dist = self.objects[b1_ind].radius + self.objects[b2_ind].radius;
+        let min_dist_sq = min_dist * min_dist;
         
-        if dist < self.objects[b1_ind].radius + self.objects[b2_ind].radius && dist > eps {
-            let delta = response_coef * 0.5 * (self.objects[b1_ind].radius + self.objects[b2_ind].radius - dist);
+        if dist_sq < min_dist_sq && dist_sq > eps_sq {
+            let dist = dist_sq.sqrt();
+            let delta = response_coef * 0.5 * (min_dist - dist);
             let col_vec = (o2_o1 / dist) * delta;
             self.objects[b1_ind].position += col_vec;
             self.objects[b2_ind].position -= col_vec;
@@ -323,33 +359,37 @@ impl PhysicsSolver {
     }
 
     fn update_other(&mut self, dt: &f32, window_vel: Vec2) { // other updates for the full simulation
-        for obj in &mut self.objects { 
+        let gravity = self.gravity;
+        let world_w = self.world.w();
+        let world_h = self.world.h();
+
+        for (i, obj) in &mut self.objects.iter_mut().enumerate() { 
             obj.add_velocity(window_vel);
-            obj.acceleration -= self.gravity / *dt;
+            obj.acceleration -= gravity * self.sub_steps as f32;
             obj.update(dt);
 
-            if obj.position.y > self.world.h() - obj.radius {
-                // obj.position.y = self.world.h() - obj.radius;
-                obj.last_position.y = self.world.h() - obj.radius;
-                obj.position.y = 2.0 * self.world.h() - 2.0 * obj.radius - obj.position.y;
+            if obj.position.y > world_h - obj.radius {
+                obj.last_position.y = world_h - obj.radius;
+                obj.position.y = world_h - obj.radius; // - obj.position.
             } else if obj.position.y < obj.radius {
-                // obj.position.y = obj.radius;
                 obj.last_position.y = obj.radius;
                 obj.position.y = 2.0 * obj.radius - obj.position.y;
             }
 
-            if obj.position.x > self.world.w() - obj.radius {
-                // obj.position.x = self.world.w() - obj.radius;
-                obj.last_position.x = self.world.w() - obj.radius;
-                obj.position.x = 2.0 * self.world.w() - 2.0 * obj.radius - obj.position.x;
+            if obj.position.x > world_w - obj.radius {
+                obj.last_position.x = world_w - obj.radius;
+                obj.position.x = world_w - obj.radius; // - obj.position.x;
             } else if obj.position.x < obj.radius {
-                // obj.position.x = obj.radius;
                 obj.last_position.x = obj.radius;
                 obj.position.x = 2.0 * obj.radius - obj.position.x;
             }
         }
     }
-
+    
+    pub fn refresh_quadtree(&mut self) {
+        self.quadtree = QuadTree::new(self.world);
+    }
+    
     pub fn freeze(&mut self) {
         for obj in &mut self.objects {
             obj.last_position = obj.position;
