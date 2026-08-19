@@ -1,10 +1,5 @@
-
-pub mod solver {
-
-
-use nannou::prelude::*;
 use nannou::color::Hsv;
-
+use nannou::prelude::*;
 
 pub struct Ball {
     pub position: Vec2,
@@ -28,13 +23,7 @@ impl Ball {
     // Construct a ball from a velocity vector and the integration timestep.
     // Ensures initial motion is consistent regardless of sub-stepping.
     pub fn with_velocity(pos: Vec2, velocity: Vec2, radius: f32, hue: f32, dt: f32) -> Self {
-        Ball {
-            position: pos,
-            last_position: pos - velocity * dt,
-            acceleration: Vec2::ZERO,
-            radius,
-            hue,
-        }
+        Ball::new(pos, velocity * dt, radius, hue)
     }
 
     pub fn color(&self) -> Hsv {
@@ -50,10 +39,12 @@ impl Ball {
         let pos_diff = self.position - self.last_position;
         let velocity_damping: f32 = 0.0;
 
-        let new_position = self.position + pos_diff + (self.acceleration - pos_diff * velocity_damping) * (dt * dt);
+        let new_position = self.position
+            + pos_diff
+            + (self.acceleration - pos_diff * velocity_damping) * (dt * dt);
         self.last_position = self.position;
-        self.position      = new_position;
-        self.acceleration  = Vec2::ZERO;
+        self.position = new_position;
+        self.acceleration = Vec2::ZERO;
 
         // self.hue = (self.hue + 0.05) % 360.0;
     }
@@ -78,11 +69,11 @@ impl Ball {
         self.last_position -= v;
     }
 
-    pub fn set_position_same_speed(&mut self, new_position: Vec2) {
-        let to_last = self.last_position - self.position;
-        self.position = new_position;
-        self.last_position = self.position + to_last;
-    }
+    // pub fn set_position_same_speed(&mut self, new_position: Vec2) {
+    //     let to_last = self.last_position - self.position;
+    //     self.position = new_position;
+    //     self.last_position = self.position + to_last;
+    // }
 
     // fn move_ball(&mut self, v: Vec2) {
     //     self.position += v;
@@ -132,13 +123,13 @@ impl QuadTreeNode {
         //     Box::new(QuadTreeNode::new(sw, self.depth + 1)),
         //     Box::new(QuadTreeNode::new(se, self.depth + 1)),
         // ]);
-        
+
         // Order: [left, right]
         // if self.depth.is_power_of_two() {
         if max.x - min.x > max.y - min.y {
-            let left  = Rect::from_corners(min, pt2(mid.x, max.y));
+            let left = Rect::from_corners(min, pt2(mid.x, max.y));
             let right = Rect::from_corners(pt2(mid.x, min.y), max);
-    
+
             self.children = Some([
                 Box::new(QuadTreeNode::new(left, self.depth + 1)),
                 Box::new(QuadTreeNode::new(right, self.depth + 1)),
@@ -146,7 +137,7 @@ impl QuadTreeNode {
         } else {
             let bot = Rect::from_corners(min, pt2(max.x, mid.y));
             let top = Rect::from_corners(pt2(min.x, mid.y), max);
-    
+
             self.children = Some([
                 Box::new(QuadTreeNode::new(top, self.depth + 1)),
                 Box::new(QuadTreeNode::new(bot, self.depth + 1)),
@@ -189,7 +180,9 @@ impl QuadTreeNode {
                 child.clear();
             }
 
-            let can_merge = children.iter().all(|c| c.objects.is_empty() && c.children.is_none());
+            let can_merge = children
+                .iter()
+                .all(|c| c.objects.is_empty() && c.children.is_none());
             if can_merge {
                 self.children = None;
             }
@@ -198,14 +191,14 @@ impl QuadTreeNode {
 
     fn collect_pairs(&self, pairs: &mut Vec<(usize, usize)>) {
         for i in 0..self.objects.len() {
-            for j in (i+1)..self.objects.len() {
+            for j in (i + 1)..self.objects.len() {
                 let a = self.objects[i].0;
                 let b = self.objects[j].0;
 
                 if a < b {
-                    pairs.push((a,b));
+                    pairs.push((a, b));
                 } else {
-                    pairs.push((b,a));
+                    pairs.push((b, a));
                 }
             }
         }
@@ -215,8 +208,6 @@ impl QuadTreeNode {
         }
     }
 }
-
-
 
 pub struct QuadTree {
     pub root: QuadTreeNode,
@@ -242,43 +233,39 @@ impl QuadTree {
         self.root.collect_pairs(pairs);
     }
 
-    pub fn average_objects_per_node(&self) -> f32 {
-        let (total_objects, total_nodes) = self.count_objects_and_nodes();
-        if total_nodes == 0 {
-            0.0
-        } else {
-            total_objects as f32 / total_nodes as f32
-        }
-    }
+    // pub fn average_objects_per_node(&self) -> f32 {
+    //     let (total_objects, total_nodes) = self.count_objects_and_nodes();
+    //     if total_nodes == 0 {
+    //         0.0
+    //     } else {
+    //         total_objects as f32 / total_nodes as f32
+    //     }
+    // }
 
-    fn count_objects_and_nodes(&self) -> (usize, usize) {
-        fn helper(node: &QuadTreeNode) -> (usize, usize) {
-            let mut total_objects = node.objects.len();
-            let mut total_nodes = 0;
+    // fn count_objects_and_nodes(&self) -> (usize, usize) {
+    //     fn helper(node: &QuadTreeNode) -> (usize, usize) {
+    //         let mut total_objects = node.objects.len();
+    //         let mut total_nodes = 0;
 
-            if let Some(children) = &node.children {
-                for child in children.iter() {
-                    let (child_objects, child_nodes) = helper(child);
-                    total_objects += child_objects;
-                    total_nodes += child_nodes;
-                }
-            } else {
-                total_nodes += 1;
-            }
+    //         if let Some(children) = &node.children {
+    //             for child in children.iter() {
+    //                 let (child_objects, child_nodes) = helper(child);
+    //                 total_objects += child_objects;
+    //                 total_nodes += child_nodes;
+    //             }
+    //         } else {
+    //             total_nodes += 1;
+    //         }
 
-            (total_objects, total_nodes)
-        }
+    //         (total_objects, total_nodes)
+    //     }
 
-        helper(&self.root)
-    }
+    //     helper(&self.root)
+    // }
 }
-
 
 pub const QT_MAX_DEPTH: usize = 15;
 pub const QT_MAX_OBJECTS: usize = 1;
-
-
-
 
 pub struct PhysicsSolver {
     pub objects: Vec<Ball>,
@@ -297,7 +284,7 @@ impl PhysicsSolver {
 
         let quadtree = QuadTree::new(world);
         let pairs = Vec::with_capacity(QT_MAX_DEPTH * QT_MAX_OBJECTS * QT_MAX_OBJECTS);
-    
+
         PhysicsSolver {
             objects,
             quadtree,
@@ -307,12 +294,13 @@ impl PhysicsSolver {
             pairs,
         }
     }
-    
-    pub fn update(&mut self, dt: &f32, window_vel: Vec2) { // main update loop for the full simulation
+
+    pub fn update(&mut self, dt: &f32, window_vel: Vec2) {
+        // main update loop for the full simulation
         let sub_dt = dt / self.sub_steps as f32;
         let sub_window_vel = window_vel / self.sub_steps as f32;
 
-        (0..self.sub_steps).for_each(|_| self.sub_update(&sub_dt, sub_window_vel) );
+        (0..self.sub_steps).for_each(|_| self.sub_update(&sub_dt, sub_window_vel));
     }
 
     fn sub_update(&mut self, dt: &f32, window_vel: Vec2) {
@@ -324,7 +312,7 @@ impl PhysicsSolver {
 
         self.quadtree.collect_pairs(&mut self.pairs);
         self.solve_collsions();
-        self.update_other(&dt, window_vel);
+        self.update_other(dt, window_vel);
     }
 
     fn solve_collsions(&mut self) {
@@ -335,20 +323,23 @@ impl PhysicsSolver {
     }
 
     #[inline(always)]
-    fn solve_contact(&mut self, b1_ind: usize, b2_ind: usize) { // Single ball on ball collision
+    fn solve_contact(&mut self, b1_ind: usize, b2_ind: usize) {
+        // Single ball on ball collision
         if b1_ind == b2_ind {
             return;
         }
-        
+
         let response_coef = 1.0;
         let eps = 0.0001;
         let eps_sq = eps * eps;
-        
+
         let o2_o1 = self.objects[b1_ind].position - self.objects[b2_ind].position;
-        let dist_sq = self.objects[b1_ind].position.distance_squared(self.objects[b2_ind].position);
+        let dist_sq = self.objects[b1_ind]
+            .position
+            .distance_squared(self.objects[b2_ind].position);
         let min_dist = self.objects[b1_ind].radius + self.objects[b2_ind].radius;
         let min_dist_sq = min_dist * min_dist;
-        
+
         if dist_sq < min_dist_sq && dist_sq > eps_sq {
             let dist = dist_sq.sqrt();
             let delta = response_coef * 0.5 * (min_dist - dist);
@@ -358,19 +349,20 @@ impl PhysicsSolver {
         }
     }
 
-    fn update_other(&mut self, dt: &f32, window_vel: Vec2) { // other updates for the full simulation
+    fn update_other(&mut self, dt: &f32, window_vel: Vec2) {
+        // other updates for the full simulation
         let gravity = self.gravity;
         let world_w = self.world.w();
         let world_h = self.world.h();
 
-        for (i, obj) in &mut self.objects.iter_mut().enumerate() { 
+        for obj in &mut self.objects.iter_mut() {
             obj.add_velocity(window_vel);
             obj.acceleration -= gravity * self.sub_steps as f32;
             obj.update(dt);
 
             if obj.position.y > world_h - obj.radius {
                 obj.last_position.y = world_h - obj.radius;
-                obj.position.y = world_h - obj.radius; // - obj.position.
+                obj.position.y = world_h - obj.radius;
             } else if obj.position.y < obj.radius {
                 obj.last_position.y = obj.radius;
                 obj.position.y = 2.0 * obj.radius - obj.position.y;
@@ -378,18 +370,18 @@ impl PhysicsSolver {
 
             if obj.position.x > world_w - obj.radius {
                 obj.last_position.x = world_w - obj.radius;
-                obj.position.x = world_w - obj.radius; // - obj.position.x;
+                obj.position.x = world_w - obj.radius;
             } else if obj.position.x < obj.radius {
                 obj.last_position.x = obj.radius;
                 obj.position.x = 2.0 * obj.radius - obj.position.x;
             }
         }
     }
-    
+
     pub fn refresh_quadtree(&mut self) {
         self.quadtree = QuadTree::new(self.world);
     }
-    
+
     pub fn freeze(&mut self) {
         for obj in &mut self.objects {
             obj.last_position = obj.position;
@@ -399,6 +391,4 @@ impl PhysicsSolver {
     pub fn add_object(&mut self, obj: Ball) {
         self.objects.push(obj);
     }
-}
-
 }
